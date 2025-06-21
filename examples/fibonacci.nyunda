@@ -1,0 +1,22 @@
+# Ngahasilkeun runtuyan Fibonacci (Menghasilkan deret Fibonacci)
+
+cetak("Ngangkit runtuyan Fibonacci dugi ka 10 istilah...")
+
+n = 10
+a = 0
+b = 1
+counter = 0
+
+cetak(a)
+cetak(b)
+
+# Loop pikeun ngahasilkeun sésana
+bari counter < n - 2 {
+    c = a + b
+    cetak(c)
+    a = b
+    b = c
+    counter = counter + 1
+}
+
+cetak("Runtuyan Fibonacci réngsé.")

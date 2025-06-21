@@ -1,0 +1,22 @@
+# Ngitung faktorial tina hiji wilangan (Menghitung faktorial dari sebuah bilangan)
+
+cetak("Ngitung faktorial 7...")
+
+n = 7
+hasil = 1
+counter = 1
+
+bari counter <= n {
+  hasil = hasil * counter
+  counter = counter + 1
+}
+
+cetak("Hasil faktorial tina 7 nyaeta:")
+cetak(hasil) # Kaluaran kedahna 5040 (Output seharusnya 5040)
+
+# Conto optimasi
+# Interpreter kedah ngaoptimalkeun 'hasil * 1' janten 'hasil'
+# sareng 'counter + 0' janten 'counter'.
+optimasi = hasil * 1 + 0
+cetak("Hasil saatos optimasi (kedah sami):")
+cetak(optimasi)
