@@ -14,7 +14,7 @@ class NyundaLexer:
         self.sunda_keywords = {
             # TODO: benerin kosa kata, blud i forgor sundanese
             'upami': 'if',
-            'lamun': 'elif',
+            'munteu': 'elif',
             'sanes': 'else',
             'bari': 'while',
             'cetak': 'print',
@@ -22,7 +22,7 @@ class NyundaLexer:
             'atawa': 'or',
             'henteu': 'not',
             'leres': 'true',
-            'palsu': 'false'
+            'salah': 'false'
         }
 
         # Token patterns (order matters for precedence)

@@ -1,0 +1,12 @@
+# Test 1: Constant Folding (5 + 10 should become 15)
+a = 5 + 10
+
+# Test 2: Strength Reduction (b ** 2 should become b * b)
+b = 4
+c = b ** 2
+
+# Test 3: Algebraic Simplification (d * 1 + 0 should become d)
+d = a + c
+e = d * 1 + 0
+
+cetak(e) # Should print the final calculated value

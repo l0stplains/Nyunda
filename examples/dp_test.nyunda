@@ -1,0 +1,10 @@
+x = 5
+y = 10
+z = 0
+
+# This loop repeatedly calculates (x * y)
+bari z < 5 {
+  a = (x * y) + z # (x*y) is the overlapping subproblem
+  cetak(a)
+  z = z + 1
+}

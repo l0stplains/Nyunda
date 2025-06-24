@@ -37,7 +37,6 @@ class StringNode(ASTNode):
     value: str
 
     def calculate_cost(self) -> int:
-        # Cost for a string is minimal for now.
         return 1
 
 @dataclass

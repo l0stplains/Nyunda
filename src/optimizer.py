@@ -1,3 +1,4 @@
+# src/optimizer.py
 """
 Applies compile-time optimizations to the AST using a Greedy Best-First
 Search algorithm. This helps simplify expressions and reduce execution cost.
@@ -5,18 +6,27 @@ Search algorithm. This helps simplify expressions and reduce execution cost.
 import heapq
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Tuple, Set
-from .ast_nodes import ASTNode, BinaryOpNode, NumberNode
+from copy import deepcopy
+from .ast_nodes import ASTNode, BinaryOpNode, NumberNode, BlockNode, IfNode, WhileNode, AssignmentNode, PrintNode
 
-@dataclass
+@dataclass(frozen=True, eq=False) # Use frozen, but define custom eq/hash based on string
 class OptimizationState:
     """State for best-first search optimization."""
     ast: ASTNode
     cost: int
     depth: int
-    transformations: List[str] = field(default_factory=list)
+    transformations: Tuple[str, ...]
 
     def __lt__(self, other):
+        if self.cost == other.cost:
+            return self.depth < other.depth
         return self.cost < other.cost
+
+    def __eq__(self, other):
+        return isinstance(other, OptimizationState) and str(self.ast) == str(other.ast)
+
+    def __hash__(self):
+        return hash(str(self.ast))
 
 class GreedyBestFirstOptimizer:
     """Greedy Best-First Search for AST optimization."""
@@ -29,21 +39,15 @@ class GreedyBestFirstOptimizer:
     def optimize(self, ast: ASTNode) -> Tuple[ASTNode, List[str]]:
         """Apply greedy best-first search optimization."""
         initial_cost = ast.cost
-        initial_state = OptimizationState(ast, initial_cost, 0, [])
+        initial_state = OptimizationState(ast, initial_cost, 0, tuple())
         
-        # Priority queue for best-first search
         priority_queue = [initial_state]
-        visited_states: Set[str] = set()
+        visited_states: Set[str] = {str(initial_state.ast)}
         best_state = initial_state
 
-        while priority_queue and len(priority_queue) < 100:  # Limit search space, 100 is large large enough i guess
+        while priority_queue:
             current_state = heapq.heappop(priority_queue)
             self.states_explored += 1
-            
-            state_sig = self._get_state_signature(current_state.ast)
-            if state_sig in visited_states:
-                continue
-            visited_states.add(state_sig)
 
             if current_state.cost < best_state.cost:
                 best_state = current_state
@@ -51,122 +55,90 @@ class GreedyBestFirstOptimizer:
             if current_state.depth >= self.max_depth:
                 continue
             
-            successors = self._generate_successors(current_state)
-            for successor in successors:
-                heapq.heappush(priority_queue, successor)
-        
-        return best_state.ast, best_state.transformations
+            for new_ast, transform_name in self._get_transformed_asts(current_state.ast):
+                new_cost = new_ast.cost
+                state_signature = str(new_ast)
 
-    def _get_state_signature(self, ast: ASTNode) -> str:
-        """Generate signature for AST state to avoid cycles."""
-        return str(hash(str(ast)))
-
-    def _generate_successors(self, state: OptimizationState) -> List[OptimizationState]:
-        """Generate successor states by applying transformations."""
-        successors = []
+                if state_signature not in visited_states:
+                    if new_cost < current_state.cost: # Only consider profitable transformations
+                        self.transformations_applied += 1
+                        new_transformations = current_state.transformations + (transform_name,)
+                        new_state = OptimizationState(new_ast, new_cost, current_state.depth + 1, new_transformations)
+                        heapq.heappush(priority_queue, new_state)
+                        visited_states.add(state_signature)
         
-        transformations = [
+        return best_state.ast, list(best_state.transformations)
+
+    def _get_transformed_asts(self, node: ASTNode):
+        """
+        A generator that recursively yields all possible single-transformation
+        versions of the given AST node.
+        """
+        # yield transformations from children (post-order traversal)
+        if isinstance(node, BlockNode):
+            for i, stmt in enumerate(node.statements):
+                for transformed_stmt, name in self._get_transformed_asts(stmt):
+                    new_statements = node.statements[:]
+                    new_statements[i] = transformed_stmt
+                    yield BlockNode(new_statements), name
+        elif isinstance(node, AssignmentNode):
+            for new_value, name in self._get_transformed_asts(node.value):
+                yield AssignmentNode(node.variable, new_value), name
+        elif isinstance(node, PrintNode):
+            for new_expr, name in self._get_transformed_asts(node.expression):
+                yield PrintNode(new_expr), name
+        elif isinstance(node, BinaryOpNode):
+            for new_left, name in self._get_transformed_asts(node.left):
+                yield BinaryOpNode(new_left, node.operator, node.right), name
+            for new_right, name in self._get_transformed_asts(node.right):
+                yield BinaryOpNode(node.left, node.operator, new_right), name
+        elif isinstance(node, IfNode):
+             for new_cond, name in self._get_transformed_asts(node.condition):
+                yield IfNode(new_cond, node.then_branch, node.else_branch), name
+        elif isinstance(node, WhileNode):
+            for new_cond, name in self._get_transformed_asts(node.condition):
+                yield WhileNode(new_cond, node.body), name
+
+        # yield transformations for the node itself
+        transformation_rules = [
             self._try_constant_folding,
             self._try_algebraic_simplification,
             self._try_strength_reduction,
-            self._try_commutative_reorder,
         ]
+        for rule in transformation_rules:
+            transformed_node, name = rule(node)
+            if transformed_node:
+                yield transformed_node, name
 
-        for transform_func in transformations:
-            # We need to traverse the AST to apply transformations at every level
-            new_ast, transform_name = self._apply_transform_recursively(state.ast, transform_func)
-            if new_ast is not None and transform_name:
-                new_cost = new_ast.cost
-                if new_cost < state.cost:
-                    new_transformations = state.transformations + [transform_name]
-                    successor = OptimizationState(
-                        new_ast, new_cost, state.depth + 1, new_transformations
-                    )
-                    successors.append(successor)
-                    self.transformations_applied += 1
-        
-        return successors
+    def _try_constant_folding(self, node: ASTNode) -> Tuple[Optional[ASTNode], str]:
+        if isinstance(node, BinaryOpNode) and isinstance(node.left, NumberNode) and isinstance(node.right, NumberNode):
+            try:
+                op_map = {'+': float.__add__, '-': float.__sub__, '*': float.__mul__, '/': float.__truediv__, '**': float.__pow__}
+                if node.operator in op_map:
+                    result = op_map[node.operator](node.left.value, node.right.value)
+                    return NumberNode(result), "constant_folding"
+            except ZeroDivisionError:
+                return None, ""
+        return None, ""
 
-    def _apply_transform_recursively(self, node, transform_func):
-        """Helper to apply a transformation function throughout the AST."""
-        # First, try to transform the node itself
-        transformed_node, name = transform_func(node)
-        if transformed_node:
-            return transformed_node, name
-
-        # If the node itself isn't transformed, recurse
+    def _try_algebraic_simplification(self, node: ASTNode) -> Tuple[Optional[ASTNode], str]:
         if isinstance(node, BinaryOpNode):
-            new_left, left_name = self._apply_transform_recursively(node.left, transform_func)
-            if new_left: return BinaryOpNode(new_left, node.operator, node.right), left_name
-
-            new_right, right_name = self._apply_transform_recursively(node.right, transform_func)
-            if new_right: return BinaryOpNode(node.left, node.operator, new_right), right_name
-
-        # Other node types with children (IfNode, WhileNode, etc.) can be handled here
-        
+            if node.operator == '+' and isinstance(node.right, NumberNode) and node.right.value == 0: return node.left, "identity_add"
+            if node.operator == '+' and isinstance(node.left, NumberNode) and node.left.value == 0: return node.right, "identity_add"
+            if node.operator == '*' and isinstance(node.right, NumberNode) and node.right.value == 1: return node.left, "identity_mul"
+            if node.operator == '*' and isinstance(node.left, NumberNode) and node.left.value == 1: return node.right, "identity_mul"
+            if node.operator == '*' and isinstance(node.right, NumberNode) and node.right.value == 0: return NumberNode(0), "mul_by_zero"
+            if node.operator == '*' and isinstance(node.left, NumberNode) and node.left.value == 0: return NumberNode(0), "mul_by_zero"
         return None, ""
 
-    def _try_commutative_reorder(self, ast: ASTNode) -> Tuple[Optional[ASTNode], str]:
-        """Try reordering commutative operations if it reduces cost."""
-        if isinstance(ast, BinaryOpNode) and ast.operator in ['+', '*', '==', '!=']:
-            if ast.right.cost < ast.left.cost:
-                new_ast = BinaryOpNode(ast.right, ast.operator, ast.left)
-                return new_ast, "commutative_reorder"
-        return None, ""
-
-    def _try_constant_folding(self, ast: ASTNode) -> Tuple[Optional[ASTNode], str]:
-        """Evaluate constant expressions at compile time."""
-        if isinstance(ast, BinaryOpNode):
-            if isinstance(ast.left, NumberNode) and isinstance(ast.right, NumberNode):
-                try:
-                    op_map = {
-                        '+': lambda a, b: a + b, '-': lambda a, b: a - b,
-                        '*': lambda a, b: a * b, '/': lambda a, b: a / b,
-                        '**': lambda a, b: a ** b
-                    }
-                    if ast.operator in op_map:
-                        result = op_map[ast.operator](ast.left.value, ast.right.value)
-                        return NumberNode(result), "constant_folding"
-                except ZeroDivisionError:
-                    return None, ""
-        return None, ""
-
-    def _try_algebraic_simplification(self, ast: ASTNode) -> Tuple[Optional[ASTNode], str]:
-        """Apply algebraic identities."""
-        if isinstance(ast, BinaryOpNode):
-            # x + 0 = x
-            if ast.operator == '+' and isinstance(ast.right, NumberNode) and ast.right.value == 0:
-                return ast.left, "add_zero_elimination"
-            if ast.operator == '+' and isinstance(ast.left, NumberNode) and ast.left.value == 0:
-                return ast.right, "add_zero_elimination"
-            
-            # x * 1 = x
-            if ast.operator == '*' and isinstance(ast.right, NumberNode) and ast.right.value == 1:
-                return ast.left, "mul_one_elimination"
-            if ast.operator == '*' and isinstance(ast.left, NumberNode) and ast.left.value == 1:
-                return ast.right, "mul_one_elimination"
-
-            # x * 0 = 0
-            if ast.operator == '*' and isinstance(ast.right, NumberNode) and ast.right.value == 0:
-                return NumberNode(0), "mul_zero_elimination"
-            if ast.operator == '*' and isinstance(ast.left, NumberNode) and ast.left.value == 0:
-                return NumberNode(0), "mul_zero_elimination"
-        return None, ""
-
-    def _try_strength_reduction(self, ast: ASTNode) -> Tuple[Optional[ASTNode], str]:
-        """Replace expensive operations with cheaper ones."""
-        if isinstance(ast, BinaryOpNode):
-            # x ** 2 -> x * x
-            if ast.operator == '**' and isinstance(ast.right, NumberNode) and ast.right.value == 2:
-                return BinaryOpNode(ast.left, '*', ast.left), "power_to_multiply"
-            
-            # x * 2 -> x + x
-            if ast.operator == '*' and isinstance(ast.right, NumberNode) and ast.right.value == 2:
-                return BinaryOpNode(ast.left, '+', ast.left), "multiply_to_add"
+    def _try_strength_reduction(self, node: ASTNode) -> Tuple[Optional[ASTNode], str]:
+        if isinstance(node, BinaryOpNode):
+            if node.operator == '**' and isinstance(node.right, NumberNode) and node.right.value == 2:
+                # USe deepcopy to ensure the nodes are distinct objects if needed later
+                return BinaryOpNode(deepcopy(node.left), '*', deepcopy(node.left)), "strength_reduction_pow2"
         return None, ""
 
     def get_stats(self) -> Dict[str, Any]:
-        """Get optimization statistics."""
         return {
             'states_explored': self.states_explored,
             'transformations_applied': self.transformations_applied

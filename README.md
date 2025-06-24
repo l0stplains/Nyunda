@@ -59,8 +59,8 @@ n = 7
 hasil = 1
 counter = 1
 
-bari counter \<= n {
-hasil = hasil \* counter
+bari counter <= n {
+hasil = hasil * counter
 counter = counter + 1
 }
 
@@ -74,7 +74,7 @@ cetak(hasil)
 
 # (Optimization example: `hasil * 1` will be optimized)
 
-optimasi = hasil \* 1 + 0
+optimasi = hasil * 1 + 0
 cetak(optimasi)
 
 ````
