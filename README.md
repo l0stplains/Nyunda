@@ -1,6 +1,9 @@
 # Nyunda Interpreter
 
 > An educational interpreter for a custom, Sundanese-inspired programming language, built from scratch in Python to demonstrate core compiler and optimization principles using well known algorithm.
+<p align="left">
+    <a href="./docs/Regex-Based%20Lexing%2C%20Greedy%20Best-First%20AST%20Transformation%20Search%2C%20and%20Dynamic%20Programming%20Memoization%20in%20the%20Nyunda%20Interpreter.pdf">Project Paper</a>
+</p>
 
 ---
 
